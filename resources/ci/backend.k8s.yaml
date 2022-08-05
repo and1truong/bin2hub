@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    service: "${PROJECT_NAME}"
+    docker_tag: "${DOCKER_TAG}"
+    hpa: "true"
+    tags.datadoghq.com/env: "${KUBE_NAMESPACE}"
+    tags.datadoghq.com/service: "${PROJECT_NAME}"
+    tags.datadoghq.com/version: "${DOCKER_TAG}"
+  annotations:
+    docker_tag: "${DOCKER_TAG}"
+    app.gitlab.com/env: "$CI_ENVIRONMENT_SLUG"
+    app.gitlab.com/app: "$CI_PROJECT_PATH_SLUG"
+  name: "${PROJECT_NAME}"
+spec:
+  replicas: ${SCALE_MIN}
+  strategy: {}
+  selector:
+    matchLabels:
+      service: "${PROJECT_NAME}"
+  template:
+    metadata:
+      labels:
+        service: "${PROJECT_NAME}"
+        repo: "$CI_PROJECT_PATH_SLUG"
+        tags.datadoghq.com/env: "${KUBE_NAMESPACE}"
+        tags.datadoghq.com/service: "${PROJECT_NAME}"
+        tags.datadoghq.com/version: "${DOCKER_TAG}"
+      annotations:
+        app.gitlab.com/env: "$CI_ENVIRONMENT_SLUG"
+        app.gitlab.com/app: "$CI_PROJECT_PATH_SLUG"
+    spec:
+      containers:
+        - image: $CI_REGISTRY_IMAGE:$DOCKER_TAG
+          name: "${PROJECT_NAME}"
+          envFrom:
+            - configMapRef:
+                name: env-configmap
+            - configMapRef:
+                name: env-${PROJECT_NAME}
+                optional: true
+            - secretRef:
+                name: db-info
+            - secretRef:
+                name: memcached-info
+                optional: true
+            - secretRef:
+                name: rabbitmq-info
+            - secretRef:
+                name: redis-info
+            - secretRef:
+                name: secret-pass
+            - secretRef:
+                name: "${PROJECT_NAME}"
+                optional: true
+          env:
+            - name: DOCKER_TAG
+              value: "${DOCKER_TAG}"
+            - name: DD_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/service']
+            - name: DD_SERVICE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/service']
+            - name: DD_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/version']
+            - name: DD_ENV
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/env']
+            - name: DD_TAGS
+              value: "domain:${PROJECT_DOMAIN}"
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_ENTITY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_TRACE_AGENT_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: ${MEM_MIN}
+              cpu: ${CPU_MIN}
+            limits:
+              memory: ${MEM_MAX}
+              cpu: ${CPU_MAX}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "90"]
+          volumeMounts:
+            - name: go1share
+              mountPath: /lr-indexing # This is the second part of : in docker-compose
+              subPath: bin2hub # This is first part of : in docker-compose, but we don't use shared nfs file in k8s so no need to have /mnt/${MOUNT_POINT}/${FILE_DIR} part.
+      volumes:
+        - name: go1share
+          azureFile:
+            secretName: go1share-secret
+            shareName: go1share
+            readOnly: false
+      terminationGracePeriodSeconds: 101
+      restartPolicy: Always
+      enableServiceLinks: false
+      nodeSelector:
+        tier/backend: "allow"
+      imagePullSecrets:
+        - name: regcred
+      dnsConfig:
+        options:
+          - name: single-request-reopen
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    service: "${PROJECT_NAME}"
+  name: "${PROJECT_NAME}"
+spec:
+  ports:
+    - port: 80
+  selector:
+    service: "${PROJECT_NAME}"
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: "${PROJECT_NAME}"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: "${PROJECT_NAME}"
+  minReplicas: ${SCALE_MIN}
+  maxReplicas: ${SCALE_MAX}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70

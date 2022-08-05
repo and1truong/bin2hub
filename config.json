@@ -1,0 +1,34 @@
+{
+	"connection":  {
+		"mysql":    {
+			"address":  "${BIN2HUB_MYSQL_HOST}:${BIN2HUB_MYSQL_PORT}",
+			"user":     "${BIN2HUB_MYSQL_USERNAME}",
+			"password": "${BIN2HUB_MYSQL_PASSWORD}",
+			"enabledSSL": ${BIN2HUB_MYSQL_ENABLE_SSL}
+		},
+		"eventhub": {
+			"_":             "Endpoint=sb://namespace.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=superSecret1234=;EntityPath=hubName",
+			"connectionUrl": "${EVENTHUB_URL}",
+			"publishing":    {
+				"maxEvents": 10000,
+				"interval":  "314ms"
+			}
+		}
+	},
+	"binlogReader": {
+		"______": "List tables to be synced.",
+		"tables": {
+			"gc_go1": ["gc_enrolment", "gc_enrolment_revision", "gc_plan", "gc_lo", "gc_user", "gc_ro", "gc_account_managers"],
+			"enrolment_prod": ["enrolment_manual"],
+			"assignment_prod": ["asm_submission_revision"],
+			"quiz_prod": ["result"],
+			"award_prod": ["award_enrolment", "award_award", "award_item_enrolment", "award_item_manual"],
+			"group_prod": ["group", "group_assignment", "group_membership"],
+			"eck_prod": ["eck_value_date", "eck_value_datetime", "eck_value_float", "eck_value_integer", "eck_value_integer", "eck_value_string", "eck_value_text", "eck_edge"]
+		},
+		"position": {
+			"directory": "${POSITION_DIRECTORY}",
+			"name": "${POSITION_NAME}"
+		}
+	}
+}

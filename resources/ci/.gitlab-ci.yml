@@ -1,0 +1,57 @@
+include:
+  - project: 'server/ci-template'
+    file: '/includes/package_docker.yml'
+  - project: 'server/ci-template'
+    file: '/includes/container_scanning.yml'
+  - project: 'server/ci-template'
+    file: '/includes/kubernetes_deploy.yml'
+
+stages:
+  - test
+  - package
+  - package-test
+  - deploy
+
+test:
+  image: golang:1.17.6-alpine3.15
+  stage: test
+  script:
+    - apk add --update build-base
+    - go mod vendor
+    - go test ./...  -cover -covermode=count -coverprofile=coverage.out
+    - go tool cover -func=coverage.out
+  except: ["tags"]
+
+package:docker:
+  only: ["main"]
+  before_script:
+    - cp ./resources/ci/Dockerfile ./Dockerfile
+
+deploy:qa:k8s:
+  only: ["main"]
+  extends: .kubernetes_deploy
+  environment:
+    name: qa
+    deployment_tier: staging
+    kubernetes:
+      namespace: "k8s-qa"
+  variables:
+    PROJECT_NAME:           $CI_PROJECT_NAME
+    MEM_MIN:                128Mi
+    MEM_MAX:                256Mi
+    CPU_MIN:                50m
+    CPU_MAX:                100m
+    SCALE_MIN:              "1"
+    SCALE_MAX:              "1"
+    EVENTHUB_URL:           $EVENTHUB_URL
+    DEBUG_ON:               "true"
+    POSITION_NAME:          "bin2hub-qa"
+    POSITION_DIRECTORY:     "/lr-indexing"
+    CONFIG:                 "config.json"
+    BIN2HUB_MYSQL_HOST:     $BIN2HUB_MYSQL_HOST
+    BIN2HUB_MYSQL_PORT:     $BIN2HUB_MYSQL_PORT
+    BIN2HUB_MYSQL_USERNAME: $BIN2HUB_MYSQL_USERNAME
+    BIN2HUB_MYSQL_PASSWORD: $BIN2HUB_MYSQL_PASSWORD
+  before_script:
+    - cp ./resources/ci/backend.k8s.yaml ./backend.k8s.yaml
+    - cp ./resources/ci/configmap.k8s.yaml ./configmap.k8s.yaml
