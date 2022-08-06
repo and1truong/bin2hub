@@ -1,4 +1,4 @@
-MyHub Feeding
+bin2hub
 ====
 
 Feeding events from MySQL binlog to EventHubs.
